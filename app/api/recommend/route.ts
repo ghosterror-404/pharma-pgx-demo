@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 
 type ProviderResult = {
   text: string | null;
-  provider: "gemini" | "claude" | "fallback";
+  provider: "claude" | "fallback";
   model: string;
 };
 
@@ -229,51 +229,6 @@ Base recommendations on real CPIC guidelines. Be specific to this patient's geno
 If the drug is not affected by this patient's pharmacogenomic profile (or has no established PGx guidance), still return valid JSON with severity: "safe", a headline like "Standard dosing appropriate", and a rationale explaining that this patient's genotypes don't impact this drug's metabolism. NEVER return an error or refuse to answer — always return the JSON structure.`;
 }
 
-async function requestFromGemini(systemPrompt: string, drug: string): Promise<ProviderResult | null> {
-  const geminiApiKey = process.env.GEMINI_API_KEY;
-  if (!geminiApiKey) {
-    return null as ProviderResult | null;
-  }
-
-  try {
-    const model = "gemini-1.5-flash";
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`;
-    const geminiResponse = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                text: `${systemPrompt}\n\nDrug: ${drug}`,
-              },
-            ],
-          },
-        ],
-      }),
-    });
-
-    if (!geminiResponse.ok) {
-      return null;
-    }
-
-    const data = (await geminiResponse.json()) as {
-      candidates?: { content?: { parts?: { text?: string }[] } }[];
-    };
-    const text =
-      data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("\n") ?? null;
-    if (!text) {
-      return null;
-    }
-
-    return { text, provider: "gemini", model };
-  } catch {
-    return null;
-  }
-}
-
 async function requestFromClaude(systemPrompt: string, drug: string): Promise<ProviderResult | null> {
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
   if (!anthropicApiKey) {
@@ -315,9 +270,7 @@ export async function POST(req: Request) {
     }
 
     const systemPrompt = buildSystemPrompt(patient);
-    const providerResult =
-      (await requestFromGemini(systemPrompt, requestedDrug)) ??
-      (await requestFromClaude(systemPrompt, requestedDrug));
+    const providerResult = await requestFromClaude(systemPrompt, requestedDrug);
     if (!providerResult?.text) {
       return jsonWithProvider(getFallbackRecommendation(requestedDrug), "fallback", "local-fallback");
     }
